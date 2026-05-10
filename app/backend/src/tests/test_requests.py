@@ -18,6 +18,9 @@ from couchers.models import (
     ClusterSubscription,
     Message,
     MessageType,
+    ModerationObjectType,
+    ModerationState,
+    ModerationVisibility,
     Node,
     NodeType,
     RateLimitAction,
@@ -1606,6 +1609,13 @@ def _create_public_trip(user_id: int, from_date, to_date, *, status=None, same_g
             )
             session.add(node)
             session.flush()
+        moderation_state = ModerationState(
+            object_type=ModerationObjectType.public_trip,
+            object_id=0,  # placeholder, set after PublicTrip flush
+            visibility=ModerationVisibility.visible,
+        )
+        session.add(moderation_state)
+        session.flush()
         trip = PublicTrip(
             user_id=user_id,
             node_id=node.id,
@@ -1614,9 +1624,11 @@ def _create_public_trip(user_id: int, from_date, to_date, *, status=None, same_g
             description="Looking for a host!",
             status=status or PublicTripStatus.searching_for_host,
             same_gender_only=same_gender_only,
+            moderation_state_id=moderation_state.id,
         )
         session.add(trip)
         session.flush()
+        moderation_state.object_id = trip.id
         return trip.id
 
 

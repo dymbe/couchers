@@ -74,8 +74,10 @@ def users_visible(context: CouchersContext, table: _User = User) -> ColumnElemen
 
     Filters the given table, assuming it's already joined/selected from
     """
-    hidden_users = _relevant_user_blocks(context.user_id)
-    return and_(table.is_visible, _shadow_clause(context, table), ~table.id.in_(hidden_users))
+    clauses = [table.is_visible, _shadow_clause(context, table)]
+    if context.is_logged_in():
+        clauses.append(~table.id.in_(_relevant_user_blocks(context.user_id)))
+    return and_(*clauses)
 
 
 def where_users_column_visible[T: tuple[Any, ...]](
@@ -84,14 +86,15 @@ def where_users_column_visible[T: tuple[Any, ...]](
     """
     Filters the given column, not yet joined/selected from
     """
-    hidden_users = _relevant_user_blocks(context.user_id)
     aliased_user = aliased(User)
-    return (
+    query = (
         query.join(aliased_user, aliased_user.id == column)
         .where(aliased_user.is_visible)
         .where(_shadow_clause(context, aliased_user))
-        .where(~aliased_user.id.in_(hidden_users))
     )
+    if context.is_logged_in():
+        query = query.where(~aliased_user.id.in_(_relevant_user_blocks(context.user_id)))
+    return query
 
 
 def users_visible_to_each_other(*, self_user: _User, other_user: _User) -> ColumnElement[bool]:

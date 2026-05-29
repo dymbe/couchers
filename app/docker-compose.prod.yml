@@ -71,6 +71,7 @@ services:
       - backend_envoy
       - envoy_nginx
       - envoy_prometheus
+      - envoy_jaeger
     dns_search: ""
   nginx:
     image: registry.gitlab.com/couchers/couchers/nginx
@@ -151,6 +152,7 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     networks:
       - backend_jaeger
+      - envoy_jaeger
 
 networks:
   backend_prometheus:
@@ -181,6 +183,9 @@ networks:
     driver: bridge
     enable_ipv6: true
   envoy_prometheus:
+    driver: bridge
+    enable_ipv6: true
+  envoy_jaeger:
     driver: bridge
     enable_ipv6: true
   backend_jaeger:

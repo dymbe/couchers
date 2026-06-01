@@ -193,6 +193,7 @@ def event_to_pb(session: Session, occurrence: EventOccurrence, context: Couchers
         thread=thread_to_pb(session, context, event.thread_id),
         can_edit=can_edit,
         can_moderate=can_moderate,
+        is_recurring=event.is_recurring,
     )
 
 
@@ -231,6 +232,46 @@ def _get_event_and_occurrence_one_or_none(
         _get_event_and_occurrence_query(occurrence_id, include_deleted, context=context)
     ).one_or_none()
     return result._tuple() if result else None
+
+
+# a recurring event series may not extend further than this into the future
+MAX_RECURRENCE = timedelta(days=182)  # ~6 months
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Add a number of months to a datetime, clamping the day to the last valid day of the target month."""
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    # clamp day to the last day of the target month
+    if month == 12:
+        days_in_month = 31
+    else:
+        days_in_month = (datetime(year, month + 1, 1) - timedelta(days=1)).day
+    return dt.replace(year=year, month=month, day=min(dt.day, days_in_month))
+
+
+def _generate_recurrence_starts(frequency: int, first_start: datetime, until: datetime) -> list[datetime]:
+    """
+    Generate the start times of additional occurrences (excluding the first) for a recurring event,
+    up to and including `until`.
+    """
+    starts: list[datetime] = []
+    if frequency == events_pb2.RECURRENCE_FREQUENCY_MONTHLY:
+        step = 1
+        while True:
+            nxt = _add_months(first_start, step)
+            if nxt > until:
+                break
+            starts.append(nxt)
+            step += 1
+    else:
+        delta = timedelta(weeks=2) if frequency == events_pb2.RECURRENCE_FREQUENCY_BIWEEKLY else timedelta(weeks=1)
+        nxt = first_start + delta
+        while nxt <= until:
+            starts.append(nxt)
+            nxt += delta
+    return starts
 
 
 def _check_occurrence_time_validity(start_time: datetime, end_time: datetime, context: CouchersContext) -> None:
@@ -349,7 +390,18 @@ def generate_event_cancel_notifications(payload: jobs_pb2.GenerateEventCancelNot
         cancelling_user = session.execute(select(User).where(User.id == payload.cancelling_user_id)).scalar_one()
 
         subscribed_user_ids = [user.id for user in event.subscribers]
-        attending_user_ids = [user.user_id for user in occurrence.attendances]
+        # attendees of the primary occurrence as well as any additional occurrences cancelled in the same
+        # all-future action; each affected user is notified only once, keyed by the primary occurrence
+        occurrence_ids = [payload.occurrence_id, *payload.additional_occurrence_ids]
+        attending_user_ids = list(
+            session.execute(
+                select(EventOccurrenceAttendee.user_id)
+                .where(EventOccurrenceAttendee.occurrence_id.in_(occurrence_ids))
+                .distinct()
+            )
+            .scalars()
+            .all()
+        )
 
         for user_id in set(subscribed_user_ids + attending_user_ids):
             if is_not_visible(session, user_id, cancelling_user.id):
@@ -518,6 +570,57 @@ class Events(events_pb2_grpc.EventsServicer):
             )
         )
 
+        if request.HasField("recurrence"):
+            event.is_recurring = True
+            until = to_aware_datetime(request.recurrence.until)
+            # the series may not extend further than 6 months into the future
+            max_until = now() + MAX_RECURRENCE
+            if until > max_until:
+                until = max_until
+            if until < start_time:
+                context.abort_with_error_code(grpc.StatusCode.INVALID_ARGUMENT, "recurrence_end_before_start")
+
+            duration = end_time - start_time
+            for occurrence_start in _generate_recurrence_starts(request.recurrence.frequency, start_time, until):
+                occurrence_during = TimestamptzRange(occurrence_start, occurrence_start + duration)
+                recurring_occurrence: EventOccurrence | None = None
+
+                def create_recurring_occurrence(
+                    moderation_state_id: int, during: TimestamptzRange = occurrence_during
+                ) -> int:
+                    nonlocal recurring_occurrence
+                    recurring_occurrence = EventOccurrence(
+                        event_id=event.id,
+                        content=request.content,
+                        geom=geom,
+                        address=address,
+                        link=link,
+                        photo_key=request.photo_key if request.photo_key != "" else None,
+                        during=during,
+                        creator_user_id=context.user_id,
+                        moderation_state_id=moderation_state_id,
+                    )
+                    session.add(recurring_occurrence)
+                    session.flush()
+                    return recurring_occurrence.id
+
+                create_moderation(
+                    session=session,
+                    object_type=ModerationObjectType.event_occurrence,
+                    object_id=create_recurring_occurrence,
+                    creator_user_id=context.user_id,
+                )
+
+                assert recurring_occurrence is not None
+
+                session.add(
+                    EventOccurrenceAttendee(
+                        user_id=context.user_id,
+                        occurrence_id=recurring_occurrence.id,
+                        attendee_status=AttendeeStatus.going,
+                    )
+                )
+
         session.commit()
 
         log_event(
@@ -655,6 +758,10 @@ class Events(events_pb2_grpc.EventsServicer):
     def UpdateEvent(
         self, request: events_pb2.UpdateEventReq, context: CouchersContext, session: Session
     ) -> events_pb2.Event:
+        # an existing event cannot be converted into a recurring event
+        if request.recurring:
+            context.abort_with_error_code(grpc.StatusCode.INVALID_ARGUMENT, "event_cant_make_recurring")
+
         user = session.execute(select(User).where(User.id == context.user_id)).scalar_one()
         res = _get_event_and_occurrence_one_or_none(session, occurrence_id=request.event_id, context=context)
         if not res:
@@ -815,14 +922,51 @@ class Events(events_pb2_grpc.EventsServicer):
 
         occurrence.is_cancelled = True
 
-        log_event(context, session, "event.cancelled", {"event_id": event.id, "occurrence_id": occurrence.id})
+        additional_occurrence_ids: list[int] = []
+        if request.scope == events_pb2.CANCEL_EVENT_SCOPE_ALL_FUTURE:
+            # cancel this occurrence plus all future, not-yet-ended occurrences of the same event
+            cutoff_time = now() - timedelta(hours=24)
+            additional_occurrence_ids = list(
+                session.execute(
+                    select(EventOccurrence.id)
+                    .where(EventOccurrence.event_id == event.id)
+                    .where(EventOccurrence.id != occurrence.id)
+                    .where(~EventOccurrence.is_cancelled)
+                    .where(~EventOccurrence.is_deleted)
+                    .where(EventOccurrence.end_time >= cutoff_time)
+                    .where(EventOccurrence.start_time >= occurrence.start_time)
+                )
+                .scalars()
+                .all()
+            )
+            if additional_occurrence_ids:
+                session.execute(
+                    update(EventOccurrence)
+                    .where(EventOccurrence.id.in_(additional_occurrence_ids))
+                    .values(is_cancelled=True)
+                    .execution_options(synchronize_session=False)
+                )
 
+        log_event(
+            context,
+            session,
+            "event.cancelled",
+            {
+                "event_id": event.id,
+                "occurrence_id": occurrence.id,
+                "scope": request.scope,
+                "additional_occurrence_ids": additional_occurrence_ids,
+            },
+        )
+
+        # a single notification job covers the whole set of cancelled occurrences to minimize notifications
         queue_job(
             session,
             job=generate_event_cancel_notifications,
             payload=jobs_pb2.GenerateEventCancelNotificationsPayload(
                 cancelling_user_id=context.user_id,
                 occurrence_id=occurrence.id,
+                additional_occurrence_ids=additional_occurrence_ids,
             ),
         )
 

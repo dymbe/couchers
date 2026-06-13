@@ -16,7 +16,22 @@ Sentry.init({
   // Adds request headers and IP for users, for more info visit:
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
-  integrations: [],
+
+  // Session Replay runs in buffer mode: we don't continuously record sessions
+  // (replaysSessionSampleRate: 0), we keep a rolling in-memory buffer and only
+  // upload it when there's an error or when the user files a bug report (which
+  // calls replay.flush() - see service/bugs.ts). All text, inputs and media are
+  // masked - this is a couch-surfing app full of private messages and PII, so
+  // the recording is a structural/click trail, not the literal screen contents.
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 1.0,
+  integrations: [
+    Sentry.replayIntegration({
+      maskAllText: true,
+      maskAllInputs: true,
+      blockAllMedia: true,
+    }),
+  ],
   // Note: if you want to override the automatic release value, do not set a
   // `release` value here - use the environment variable `SENTRY_RELEASE`, so
   // that it will also get attached to your source maps

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -74,6 +75,17 @@ api2updatecause = {
 }
 
 _OTA_BOUNDARY = "COUCHERS_OTA_BOUNDARY"
+
+# The web client reports to the Sentry "frontend" project (org "couchers", project id 5887585);
+# see app/web/instrumentation-client.ts. These let a triager jump from the GitHub issue straight
+# to the reporter's recent Sentry errors and the session recording for this exact report.
+_SENTRY_FRONTEND_ISSUES_URL = (
+    "https://couchers.sentry.io/issues/?project=5887585&query=user.id%3A{user_id}&statsPeriod=24h"
+)
+_SENTRY_FRONTEND_REPLAY_URL = "https://couchers.sentry.io/replays/{replay_id}/?project=5887585"
+# Sentry replay ids are 32 lowercase hex chars. Validating before interpolating keeps an
+# arbitrary client-supplied string out of the issue markdown.
+_SENTRY_REPLAY_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
 def _ota_multipart_body(field_name: str, content: dict[str, Any]) -> bytes:
@@ -184,6 +196,24 @@ class Bugs(bugs_pb2_grpc.BugsServicer):
         else:
             user_details = "<not logged in>"
 
+        diagnostics_lines = [
+            f"**Backend version**: `{self._version()}`",
+            f"**Frontend version**: `{request.frontend_version}`",
+            f"**User Agent**: `{request.user_agent}`",
+            f"**Locale**: `{context.localization.locale}`",
+            f"**Screen resolution**: {request.screen_resolution.width}x{request.screen_resolution.height}",
+            f"**Page**: {request.page}",
+            f"**User**: {user_details} / `{(context._sofa or '')[:12]}`",
+        ]
+        if context.is_logged_in():
+            diagnostics_lines.append(
+                f"**Sentry (this user)**: {_SENTRY_FRONTEND_ISSUES_URL.format(user_id=context.user_id)}"
+            )
+        if _SENTRY_REPLAY_ID_RE.fullmatch(request.sentry_replay_id):
+            diagnostics_lines.append(
+                f"**Session replay**: {_SENTRY_FRONTEND_REPLAY_URL.format(replay_id=request.sentry_replay_id)}"
+            )
+
         issue_title = request.subject
         issue_body = (
             f"# {request.subject}\n"
@@ -193,14 +223,7 @@ class Bugs(bugs_pb2_grpc.BugsServicer):
             f"## Results\n"
             f"{request.results}\n"
             f"\n"
-            f"## Diagnostics\n"
-            f"**Backend version**: `{self._version()}`\n"
-            f"**Frontend version**: `{request.frontend_version}`\n"
-            f"**User Agent**: `{request.user_agent}`\n"
-            f"**Locale**: `{context.localization.locale}`\n"
-            f"**Screen resolution**: {request.screen_resolution.width}x{request.screen_resolution.height}\n"
-            f"**Page**: {request.page}\n"
-            f"**User**: {user_details} / `{(context._sofa or '')[:12]}`"
+            f"## Diagnostics\n" + "\n".join(diagnostics_lines)
         )
         issue_labels = ["bug tool", "bug: triage needed"]
 

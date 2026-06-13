@@ -1,4 +1,5 @@
 import { BugReportFormData } from "components/Navigation/ReportDialog";
+import Sentry from "platform/sentry";
 import {
   GeolocationClickInfoReq,
   GeolocationSearchInfoReq,
@@ -7,6 +8,20 @@ import {
 } from "proto/bugs_pb";
 
 import client from "./client";
+
+// Force the buffered Sentry session replay to upload and return its id, so the
+// backend can link the recording from the GitHub issue. Best-effort: a missing
+// or failed replay must never block the bug report itself.
+async function flushSentryReplay(): Promise<string> {
+  const replay = Sentry.getReplay();
+  if (!replay) return "";
+  try {
+    await replay.flush();
+    return replay.getReplayId() ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export async function reportBug({
   description,
@@ -26,6 +41,7 @@ export async function reportBug({
   req.setUserAgent(navigator.userAgent);
   req.setScreenResolution(screenResolution);
   req.setPage(window.location.href);
+  req.setSentryReplayId(await flushSentryReplay());
 
   const res = await client.bugs.reportBug(req);
   return res.toObject();

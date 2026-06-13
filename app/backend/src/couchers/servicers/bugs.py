@@ -76,15 +76,12 @@ api2updatecause = {
 
 _OTA_BOUNDARY = "COUCHERS_OTA_BOUNDARY"
 
-# The web client reports to the Sentry "frontend" project (org "couchers", project id 5887585);
-# see app/web/instrumentation-client.ts. These let a triager jump from the GitHub issue straight
-# to the reporter's recent Sentry errors and the session recording for this exact report.
+# Sentry "frontend" project (project id 5887585); see app/web/instrumentation-client.ts.
 _SENTRY_FRONTEND_ISSUES_URL = (
     "https://couchers.sentry.io/issues/?project=5887585&query=user.id%3A{user_id}&statsPeriod=24h"
 )
 _SENTRY_FRONTEND_REPLAY_URL = "https://couchers.sentry.io/replays/{replay_id}/?project=5887585"
-# Sentry replay ids are 32 lowercase hex chars. Validating before interpolating keeps an
-# arbitrary client-supplied string out of the issue markdown.
+# Validate before interpolating to keep a client-supplied string out of the issue markdown.
 _SENTRY_REPLAY_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 

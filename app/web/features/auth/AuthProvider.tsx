@@ -28,9 +28,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const push = useStablePush();
 
-  // The auth actions set the Sentry user on login/logout, but on a page reload
-  // auth state is restored from localStorage without going through them - sync
-  // it here so a returning session's errors and replays stay attributed.
+  // A page reload restores auth from localStorage without going through the auth
+  // actions that set the Sentry user, so sync it here too.
   const userId = store.authState.userId;
   useEffect(() => {
     Sentry.setUser(userId ? { id: userId.toString() } : null);

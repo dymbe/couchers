@@ -9,9 +9,8 @@ import {
 
 import client from "./client";
 
-// Force the buffered Sentry session replay to upload and return its id, so the
-// backend can link the recording from the GitHub issue. Best-effort: a missing
-// or failed replay must never block the bug report itself.
+// Force the buffered replay to upload and return its id. Best-effort: a failure
+// here must never block the bug report.
 async function flushSentryReplay(): Promise<string> {
   const replay = Sentry.getReplay();
   if (!replay) return "";

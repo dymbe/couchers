@@ -87,9 +87,7 @@ message ReportBugReq {
 
   ScreenResolution screen_resolution = 8;
 
-  // Sentry Session Replay id for the reporter's current session, captured (and
-  // force-flushed) by the web client when the report is filed. Empty when no
-  // replay was recorded. The backend turns this into a link in the issue.
+  // Sentry Session Replay id, force-flushed by the web client when the report is filed.
   string sentry_replay_id = 9;
 }
 

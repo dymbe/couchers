@@ -17,12 +17,8 @@ Sentry.init({
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
 
-  // Session Replay runs in buffer mode: we don't continuously record sessions
-  // (replaysSessionSampleRate: 0), we keep a rolling in-memory buffer and only
-  // upload it when there's an error or when the user files a bug report (which
-  // calls replay.flush() - see service/bugs.ts). All text, inputs and media are
-  // masked - this is a couch-surfing app full of private messages and PII, so
-  // the recording is a structural/click trail, not the literal screen contents.
+  // Buffer mode: don't continuously record, only upload on an error or when a bug
+  // report flushes the buffer (service/bugs.ts). Mask everything given the PII here.
   replaysSessionSampleRate: 0,
   replaysOnErrorSampleRate: 1.0,
   integrations: [

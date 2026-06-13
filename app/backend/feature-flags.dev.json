@@ -8,5 +8,7 @@
   "postal_verification_enabled": false,
   "listmonk_enabled": false,
   "notification_translations_enabled": true,
-  "email_ics_attachments_enabled": true
+  "email_ics_attachments_enabled": true,
+  "rate_limiting_enabled": false,
+  "rate_limiting_fail_closed": false
 }

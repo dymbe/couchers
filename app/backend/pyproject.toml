@@ -44,6 +44,7 @@ dependencies = [
     "user-agents>=2.2.0",
     "growthbook>=1.2.0",
     "pyroscope-io>=1.0.9",
+    "valkey>=6.1.0",
 ]
 
 [project.scripts]

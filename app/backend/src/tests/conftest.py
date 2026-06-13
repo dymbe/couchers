@@ -224,6 +224,9 @@ def testconfig():
     config.BUG_TOOL_GITHUB_USERNAME = "user"
     config.BUG_TOOL_GITHUB_TOKEN = "token"
 
+    config.SENTRY_FRONTEND_DASHBOARD_URL = "https://couchers.sentry.io"
+    config.SENTRY_FRONTEND_PROJECT_ID = "5887585"
+
     config.LISTMONK_BASE_URL = "https://localhost"
     config.LISTMONK_API_USERNAME = "..."
     config.LISTMONK_API_KEY = "..."

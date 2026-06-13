@@ -97,6 +97,10 @@ class Config:
     # Sentry
     SENTRY_ENABLED: bool
     SENTRY_URL: str
+    # Sentry dashboard for the web "frontend" project, used to deep-link bug reports to a
+    # reporter's errors and session replay. The org dashboard root, e.g. https://couchers.sentry.io
+    SENTRY_FRONTEND_DASHBOARD_URL: str
+    SENTRY_FRONTEND_PROJECT_ID: str
     # Push notifications
     PUSH_NOTIFICATIONS_ENABLED: bool
     PUSH_NOTIFICATIONS_VAPID_PRIVATE_KEY: str

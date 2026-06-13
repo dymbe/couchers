@@ -152,3 +152,14 @@ def invite_code_link(*, code: str) -> str:
 
 def postal_verification_link(*, code: str) -> str:
     return f"{config.BASE_URL}/verify-postal?c={code}"
+
+
+def sentry_frontend_user_issues(*, user_id: int) -> str:
+    return (
+        f"{config.SENTRY_FRONTEND_DASHBOARD_URL}/issues/"
+        f"?project={config.SENTRY_FRONTEND_PROJECT_ID}&query=user.id%3A{user_id}&statsPeriod=24h"
+    )
+
+
+def sentry_frontend_replay(*, replay_id: str) -> str:
+    return f"{config.SENTRY_FRONTEND_DASHBOARD_URL}/replays/{replay_id}/?project={config.SENTRY_FRONTEND_PROJECT_ID}"

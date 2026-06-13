@@ -76,12 +76,7 @@ api2updatecause = {
 
 _OTA_BOUNDARY = "COUCHERS_OTA_BOUNDARY"
 
-# Sentry "frontend" project (project id 5887585); see app/web/instrumentation-client.ts.
-_SENTRY_FRONTEND_ISSUES_URL = (
-    "https://couchers.sentry.io/issues/?project=5887585&query=user.id%3A{user_id}&statsPeriod=24h"
-)
-_SENTRY_FRONTEND_REPLAY_URL = "https://couchers.sentry.io/replays/{replay_id}/?project=5887585"
-# Validate before interpolating to keep a client-supplied string out of the issue markdown.
+# Validate before building a link to keep a client-supplied string out of the issue markdown.
 _SENTRY_REPLAY_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
@@ -204,11 +199,11 @@ class Bugs(bugs_pb2_grpc.BugsServicer):
         ]
         if context.is_logged_in():
             diagnostics_lines.append(
-                f"**Sentry (this user)**: {_SENTRY_FRONTEND_ISSUES_URL.format(user_id=context.user_id)}"
+                f"**Sentry (this user)**: {urls.sentry_frontend_user_issues(user_id=context.user_id)}"
             )
         if _SENTRY_REPLAY_ID_RE.fullmatch(request.sentry_replay_id):
             diagnostics_lines.append(
-                f"**Session replay**: {_SENTRY_FRONTEND_REPLAY_URL.format(replay_id=request.sentry_replay_id)}"
+                f"**Session replay**: {urls.sentry_frontend_replay(replay_id=request.sentry_replay_id)}"
             )
 
         issue_title = request.subject
